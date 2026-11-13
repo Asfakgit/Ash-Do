@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Vite cache
+.vite
+
+# Android build outputs and signing secrets
+android/app/release
+*.keystore
+*.jks
+android/keystore.properties

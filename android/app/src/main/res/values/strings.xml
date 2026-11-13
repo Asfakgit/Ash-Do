@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ash Do</string>
+    <string name="title_activity_main">Ash Do</string>
+    <string name="package_name">com.ashfak.ashdo</string>
+    <string name="custom_url_scheme">com.ashfak.ashdo</string>
+</resources>

@@ -1,0 +1,31 @@
+{
+  "appId": "com.ashfak.ashdo",
+  "appName": "Ash Do",
+  "webDir": "dist",
+  "android": {
+    "backgroundColor": "#08080c",
+    "allowMixedContent": false,
+    "captureInput": true
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "initialViewportFitValueHint": "cover"
+    },
+    "SplashScreen": {
+      "launchShowDuration": 3000,
+      "launchAutoHide": false,
+      "backgroundColor": "#08080c",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false
+    },
+    "Keyboard": {
+      "resize": "native",
+      "resizeOnFullScreen": true
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_ashdo",
+      "iconColor": "#C2F23D"
+    }
+  }
+}

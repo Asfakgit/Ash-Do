@@ -1,42 +1,53 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+
+// Offline alarm: a soft three-note chime synthesised with Web Audio (no audio files, no network).
+let ctx = null;
+const getCtx = () => {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  if (!ctx) ctx = new AC();
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+  return ctx;
+};
+
+function chime(volume = 0.8) {
+  const ac = getCtx();
+  if (!ac) return;
+  const notes = [880, 1174.66, 1567.98]; // A5, D6, G6
+  const start = ac.currentTime + 0.02;
+  for (let rep = 0; rep < 2; rep++) {
+    notes.forEach((f, i) => {
+      const t = start + rep * 0.9 + i * 0.16;
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = f;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.25 * volume, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+      osc.connect(gain).connect(ac.destination);
+      osc.start(t);
+      osc.stop(t + 1);
+    });
+  }
+}
 
 export const AlarmManager = () => {
   const { settings } = useApp();
-  const audioRef = useRef(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-
-  // Expose play/stop globally if needed via a custom event, or just listen to state changes.
-  // For now, we will add a global window method for testing/triggering easily.
   useEffect(() => {
+    // Browsers only allow audio after a user gesture: unlock on first interaction.
+    const unlock = () => getCtx();
+    window.addEventListener('pointerdown', unlock, { once: true });
     window.playAlarm = () => {
-      if (settings?.alarm?.enabled && audioRef.current) {
-        audioRef.current.volume = settings.alarm.volume || 1.0;
-        audioRef.current.play().catch(err => console.log('Audio play failed:', err));
-        setIsPlaying(true);
-      }
+      if (settings?.alarm?.enabled !== false) chime(settings?.alarm?.volume ?? 0.8);
     };
-
-    window.stopAlarm = () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-        setIsPlaying(false);
-      }
-    };
-
+    window.stopAlarm = () => ctx?.suspend().catch(() => {});
     return () => {
+      window.removeEventListener('pointerdown', unlock);
       delete window.playAlarm;
       delete window.stopAlarm;
     };
   }, [settings]);
-
-  return (
-    <audio
-      ref={audioRef}
-      src={settings?.alarm?.soundUrl || 'https://cdn.freesound.org/previews/411/411089_5121236-lq.mp3'}
-      preload="auto"
-      onEnded={() => setIsPlaying(false)}
-    />
-  );
+  return null;
 };
