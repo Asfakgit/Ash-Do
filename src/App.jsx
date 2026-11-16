@@ -13,9 +13,11 @@ import { TaskEditor } from './components/Tasks/TaskEditor';
 import { CalendarView } from './components/Calendar/CalendarView';
 import { FocusView } from './components/Focus/FocusView';
 import { AchievementsView } from './components/Achievements/AchievementsView';
+import { DiaryView } from './components/Diary/DiaryView';
+import { DiaryReminder } from './components/Diary/DiaryReminder';
 import { SettingsView } from './components/MobileViews/SettingsView';
 import { AuthScreen } from './components/Auth/AuthScreen';
-import { AlarmManager } from './components/AlarmManager';
+import { AlarmProvider } from './components/AlarmManager';
 import { TaskAlarmManager } from './components/TaskAlarmManager';
 import { Confetti, Toaster } from './components/ui';
 import { hideSplash, initNative, minimizeApp, setStatusBarTheme } from './lib/native';
@@ -24,13 +26,13 @@ function CurrentView() {
   const { route } = useUI();
   switch (route) {
     case 'tasks':
-    case 'today':
-    case 'upcoming':
-      return <TasksView key={route} preset={route} />;
+      return <TasksView />;
     case 'calendar':
       return <CalendarView />;
     case 'focus':
       return <FocusView />;
+    case 'diary':
+      return <DiaryView />;
     case 'achievements':
       return <AchievementsView />;
     case 'settings':
@@ -75,14 +77,14 @@ function Shell() {
   }, [navigate]);
 
   return (
-    <>
-      <AlarmManager />
+    <AlarmProvider>
       <TaskAlarmManager />
+      <DiaryReminder />
       <ResponsiveLayout>
         <CurrentView key={route} />
       </ResponsiveLayout>
       <TaskEditor />
-    </>
+    </AlarmProvider>
   );
 }
 

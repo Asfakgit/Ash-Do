@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Sun, Moon, Laptop, Bell, Play, Trash2, User, Palette, LayoutDashboard, ListTodo, Target, Timer, Folder, Download, Upload, Info, ChevronUp, ChevronDown, Camera, Check, X, Plus, ShieldCheck, KeyRound, HardDrive, UserX, Loader2, Smartphone,
+  Sun, Moon, Laptop, Bell, Play, Volume2, Trash2, User, Palette, ListTodo, Target, Timer, Folder, Download, Upload, Info, Camera, Check, X, Plus, ShieldCheck, KeyRound, HardDrive, UserX, Loader2, Smartphone,
 } from 'lucide-react';
 import { useTheme, ACCENTS } from '../../context/ThemeContext';
 import { useApp } from '../../context/AppContext';
@@ -11,8 +11,10 @@ import { buildBackup, parseBackup } from '../../lib/backup';
 import { storageInfo, validatePassword } from '../../lib/db';
 import { exactAlarmStatus, isNative, notificationPermission, requestExactAlarms, requestNotificationPermission, saveTextFile, notifyNow } from '../../lib/native';
 import { DEFAULT_CATEGORIES, REMINDERS } from '../../lib/tasks';
-import { WIDGET_LABELS } from '../Dashboard/DashboardView';
 import { Avatar, Card, CardHeader, Modal, Segmented, Toggle, cn } from '../ui';
+import { ALARM_TONES, playTone } from '../../lib/sound';
+import { useAlarm } from '../AlarmManager';
+import { DiaryReminderSettings } from '../Diary/DiaryView';
 
 const CATEGORY_COLORS = ['#5B8CFF', '#A78BFA', '#22D3EE', '#34D399', '#F5A524', '#F472B6', '#FB7185', '#C2F23D'];
 
@@ -39,10 +41,11 @@ const NumberField = ({ id, label, value, onChange, min, max, suffix }) => (
 );
 
 export const SettingsView = () => {
-  const { theme, setTheme, accentColor, setAccentColor } = useTheme();
-  const { settings, updateSettingsSection, setSettingsValue } = useApp();
+  const { theme, accentColor } = useTheme();
+  const { settings, updateSettingsSection, setSettingsValue, setAppearance } = useApp();
   const { renameUser, user } = useAuth();
   const { toast, params } = useUI();
+  const { ring } = useAlarm();
   const [newCat, setNewCat] = useState({ name: '', color: CATEGORY_COLORS[0] });
   const [permission, setPermission] = useState('default');
   const [exact, setExact] = useState('unsupported');
@@ -55,17 +58,6 @@ export const SettingsView = () => {
   useEffect(() => {
     if (params.section) document.getElementById(params.section)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [params.section]);
-
-  const widgets = settings.dashboard.widgets;
-  const moveWidget = (i, dir) => {
-    const arr = [...widgets];
-    const j = i + dir;
-    if (j < 0 || j >= arr.length) return;
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-    updateSettingsSection('dashboard', 'widgets', arr);
-  };
-  const toggleWidget = (id) =>
-    updateSettingsSection('dashboard', 'widgets', widgets.map((w) => (w.id === id ? { ...w, visible: !w.visible } : w)));
 
   const handleImageUpload = (e) => {
     const file = e.target.files?.[0];
@@ -107,12 +99,7 @@ export const SettingsView = () => {
   };
 
   return (
-    <div className="space-y-5 max-w-3xl">
-      <div>
-        <p className="eyebrow">Preferences</p>
-        <h1 className="font-display text-3xl font-semibold tracking-tight mt-1">Settings</h1>
-      </div>
-
+    <div className="space-y-4">
       {/* Profile */}
       <Card className="scroll-mt-24" id="profile">
         <CardHeader icon={User} title="Profile" subtitle="How Ash Do greets you" />
@@ -135,7 +122,7 @@ export const SettingsView = () => {
               onChange={(e) => updateSettingsSection('profile', 'userName', e.target.value || 'User')}
               onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== user?.name && renameUser(e.target.value)}
             />
-            <p className="text-xs text-subtle mt-1.5">Signed in as {user?.email} · local profile on this device</p>
+            <p className="text-xs text-subtle mt-1.5">Signed in as @{user?.username} · stored only on this phone</p>
             {settings.profile.profileImage && (
               <button type="button" className="text-xs text-rose-500 font-semibold mt-2" onClick={() => updateSettingsSection('profile', 'profileImage', null)}>
                 Remove photo
@@ -153,7 +140,7 @@ export const SettingsView = () => {
         <Segmented
           className="w-full"
           value={theme}
-          onChange={setTheme}
+          onChange={(v) => setAppearance('theme', v)}
           options={[
             { id: 'light', label: 'Light', icon: Sun },
             { id: 'dark', label: 'Dark', icon: Moon },
@@ -167,7 +154,7 @@ export const SettingsView = () => {
               key={a.id}
               type="button"
               aria-pressed={accentColor === a.id}
-              onClick={() => setAccentColor(a.id)}
+              onClick={() => setAppearance('accent', a.id)}
               className={cn('flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-medium transition-all', accentColor === a.id ? 'border-fg/40 bg-surface-2' : 'border-line hover:bg-surface-2')}
             >
               <span className="grid place-items-center w-5 h-5 rounded-full" style={{ background: a.swatch }}>
@@ -179,32 +166,10 @@ export const SettingsView = () => {
         </div>
       </Card>
 
-      {/* Dashboard widgets */}
-      <Card>
-        <CardHeader icon={LayoutDashboard} title="Dashboard widgets" subtitle="Show, hide and reorder your bento" />
-        <ul className="divide-y divide-line">
-          {widgets.map((w, i) => (
-            <li key={w.id} className="flex items-center gap-3">
-              <div className="flex flex-col">
-                <button type="button" className="icon-btn w-6 h-5 rounded-md" aria-label="Move up" disabled={i === 0} onClick={() => moveWidget(i, -1)}>
-                  <ChevronUp className="w-3.5 h-3.5" />
-                </button>
-                <button type="button" className="icon-btn w-6 h-5 rounded-md" aria-label="Move down" disabled={i === widgets.length - 1} onClick={() => moveWidget(i, 1)}>
-                  <ChevronDown className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <div className={cn('flex-1', !w.visible && 'opacity-60')}>
-                <Toggle checked={w.visible} onChange={() => toggleWidget(w.id)} label={WIDGET_LABELS[w.id]} />
-              </div>
-            </li>
-          ))}
-        </ul>
-      </Card>
-
       {/* Task display */}
       <Card>
         <CardHeader icon={ListTodo} title="Task display" />
-        <div className="grid sm:grid-cols-3 gap-4">
+        <div className="space-y-4">
           <div>
             <span className="label">Density</span>
             <Segmented
@@ -230,7 +195,7 @@ export const SettingsView = () => {
             </select>
           </div>
           <div>
-            <label className="label" htmlFor="set-group">Group My Tasks by</label>
+            <label className="label" htmlFor="set-group">Group tasks by</label>
             <select id="set-group" className="field py-2" value={settings.taskDisplay.groupBy} onChange={(e) => updateSettingsSection('taskDisplay', 'groupBy', e.target.value)}>
               <option value="date">Date</option>
               <option value="priority">Priority</option>
@@ -242,9 +207,9 @@ export const SettingsView = () => {
       </Card>
 
       {/* Goals + Focus */}
-      <div className="grid md:grid-cols-2 gap-5">
+      <div className="space-y-4">
         <Card>
-          <CardHeader icon={Target} title="Productivity goals" subtitle="Drives your score and quest" />
+          <CardHeader icon={Target} title="Productivity goals" subtitle="Your daily targets" />
           <div className="grid grid-cols-2 gap-3">
             <NumberField id="goal-tasks" label="Tasks / day" min={1} max={50} value={settings.goals_v2.dailyTasks} onChange={(v) => updateSettingsSection('goals_v2', 'dailyTasks', v)} />
             <NumberField id="goal-focus" label="Focus / day" min={5} max={600} suffix="min" value={settings.goals_v2.dailyFocusMinutes} onChange={(v) => updateSettingsSection('goals_v2', 'dailyFocusMinutes', v)} />
@@ -320,7 +285,53 @@ export const SettingsView = () => {
               ))}
             </select>
           </div>
-          <Toggle label="Alarm sound" checked={settings.alarm.enabled} onChange={(v) => updateSettingsSection('alarm', 'enabled', v)} />
+          <Toggle label="Alarm sound" description="Rings until you respond, while Ash Do is open" checked={settings.alarm.enabled} onChange={(v) => updateSettingsSection('alarm', 'enabled', v)} />
+          {settings.alarm.enabled && (
+            <div className="py-3 space-y-3">
+              <div>
+                <span className="label">Sound</span>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {ALARM_TONES.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      aria-pressed={settings.alarm.tone === t.id}
+                      onClick={() => {
+                        updateSettingsSection('alarm', 'tone', t.id);
+                        playTone(t.id, settings.alarm.volume);
+                      }}
+                      className={cn('chip justify-center py-2', settings.alarm.tone === t.id && 'bg-accent/15 border-accent-ink/50 text-fg')}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <label className="flex items-center gap-3">
+                <Volume2 className="w-4 h-4 text-subtle shrink-0" />
+                <span className="sr-only">Volume</span>
+                <input
+                  type="range"
+                  min="0.1"
+                  max="1"
+                  step="0.1"
+                  value={settings.alarm.volume}
+                  onChange={(e) => updateSettingsSection('alarm', 'volume', Number(e.target.value))}
+                  onPointerUp={() => playTone(settings.alarm.tone, settings.alarm.volume)}
+                  className="flex-1 accent-[var(--accent)]"
+                />
+              </label>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-4 py-3">
+            <label htmlFor="snooze" className="text-sm font-medium">Snooze for</label>
+            <select id="snooze" className="field w-auto py-2" value={settings.alarm.snooze} onChange={(e) => updateSettingsSection('alarm', 'snooze', Number(e.target.value))}>
+              {[5, 10, 15, 30].map((m) => (
+                <option key={m} value={m}>{m} minutes</option>
+              ))}
+            </select>
+          </div>
+          <DiaryReminderSettings />
           {exact !== 'unsupported' && (
             <div className="flex items-center justify-between gap-4 py-3">
               <span className="min-w-0">
@@ -337,8 +348,12 @@ export const SettingsView = () => {
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2 pt-3">
-            <button type="button" className="btn btn-ghost" onClick={() => window.playAlarm?.()} disabled={!settings.alarm.enabled}>
-              <Play className="w-4 h-4" /> Test sound
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => ring({ id: `test|${Date.now()}`, kind: 'task', title: 'Test alarm', body: 'This is how your reminders will look and sound.', loud: true, actions: [] })}
+            >
+              <Play className="w-4 h-4" /> Test alarm
             </button>
             {permission === 'granted' ? (
               <span className="chip py-1.5 px-3 text-accent-ink"><ShieldCheck className="w-3.5 h-3.5" /> Notifications on</span>
@@ -404,12 +419,12 @@ function PasswordForm() {
       </button>
     );
   return (
-    <form onSubmit={submit} className="mt-4 grid sm:grid-cols-3 gap-2 anim-pop">
+    <form onSubmit={submit} className="mt-4 grid gap-2 anim-pop">
       <input type="password" className="field" placeholder="Current password" autoComplete="current-password" value={f.current} onChange={(e) => setF({ ...f, current: e.target.value })} aria-label="Current password" />
       <input type="password" className="field" placeholder="New password" autoComplete="new-password" value={f.next} onChange={(e) => setF({ ...f, next: e.target.value })} aria-label="New password" />
       <input type="password" className="field" placeholder="Confirm new" autoComplete="new-password" value={f.confirm} onChange={(e) => setF({ ...f, confirm: e.target.value })} aria-label="Confirm new password" />
-      {err && <p className="sm:col-span-3 text-xs text-rose-500">{err}</p>}
-      <div className="sm:col-span-3 flex gap-2">
+      {err && <p className="text-xs text-rose-500">{err}</p>}
+      <div className="flex gap-2">
         <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
         <button type="submit" className="btn btn-primary" disabled={busy || !f.current || !f.next}>
           {busy && <Loader2 className="w-4 h-4 animate-spin" />} Update password
@@ -483,7 +498,7 @@ function DataCard() {
       setBusy(false);
     }
   };
-  const confirmWord = confirm === 'device' ? 'DELETE' : auth.user?.email || '';
+  const confirmWord = confirm === 'device' ? 'DELETE' : auth.user?.username || '';
 
   return (
     <Card id="data" className="scroll-mt-24">
@@ -514,7 +529,7 @@ function DataCard() {
         </button>
       </div>
 
-      <Modal open={Boolean(pending)} onClose={() => !busy && setPending(null)} className="sm:max-w-md" labelledBy="restore-title">
+      <Modal open={Boolean(pending)} onClose={() => !busy && setPending(null)} labelledBy="restore-title">
         {pending && (
           <div className="p-6">
             <h2 id="restore-title" className="font-display font-semibold text-lg">Restore this backup?</h2>
@@ -542,7 +557,7 @@ function DataCard() {
         )}
       </Modal>
 
-      <Modal open={Boolean(confirm)} onClose={() => !busy && setConfirm(null)} className="sm:max-w-sm" labelledBy="delete-title">
+      <Modal open={Boolean(confirm)} onClose={() => !busy && setConfirm(null)} labelledBy="delete-title">
         <div className="p-6">
           <span className="grid place-items-center w-12 h-12 rounded-2xl bg-rose-500/12 text-rose-500 mb-3">
             <Trash2 className="w-6 h-6" />
@@ -557,7 +572,7 @@ function DataCard() {
             This can't be undone. Export a backup first if you might need it.
           </p>
           <label className="block mt-4">
-            <span className="label">Type {confirm === 'device' ? 'DELETE' : 'your email'} to confirm</span>
+            <span className="label">Type {confirm === 'device' ? 'DELETE' : 'your username'} to confirm</span>
             <input className="field" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />
           </label>
           <div className="flex gap-2 mt-5">

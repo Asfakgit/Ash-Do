@@ -1,53 +1,105 @@
-import { useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { BellRing, NotebookPen } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { playTone, startRinging, stopRinging, unlockAudio } from '../lib/sound';
+import { pushBackHandler } from '../lib/native';
+import { cn } from './ui';
 
-// Offline alarm: a soft three-note chime synthesised with Web Audio (no audio files, no network).
-let ctx = null;
-const getCtx = () => {
-  const AC = window.AudioContext || window.webkitAudioContext;
-  if (!AC) return null;
-  if (!ctx) ctx = new AC();
-  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-  return ctx;
-};
+// In-app alarm: a sheet that rings (repeating sound + vibration) until the person acts on it.
+// ring({ id, kind: 'task' | 'diary', title, body, loud, actions: [{ label, icon, primary, onClick }] })
+//   loud = false for reminders that were missed while the app was closed: shown, not rung.
+const AlarmContext = createContext({ ring: () => {} });
+export const useAlarm = () => useContext(AlarmContext);
 
-function chime(volume = 0.8) {
-  const ac = getCtx();
-  if (!ac) return;
-  const notes = [880, 1174.66, 1567.98]; // A5, D6, G6
-  const start = ac.currentTime + 0.02;
-  for (let rep = 0; rep < 2; rep++) {
-    notes.forEach((f, i) => {
-      const t = start + rep * 0.9 + i * 0.16;
-      const osc = ac.createOscillator();
-      const gain = ac.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = f;
-      gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(0.25 * volume, t + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
-      osc.connect(gain).connect(ac.destination);
-      osc.start(t);
-      osc.stop(t + 1);
-    });
-  }
-}
-
-export const AlarmManager = () => {
+export function AlarmProvider({ children }) {
   const { settings } = useApp();
+  const cfg = settings.alarm;
+  const [queue, setQueue] = useState([]);
+  const current = queue[0];
+
   useEffect(() => {
-    // Browsers only allow audio after a user gesture: unlock on first interaction.
-    const unlock = () => getCtx();
+    const unlock = () => unlockAudio();
     window.addEventListener('pointerdown', unlock, { once: true });
+    // One-off sound (focus timer, sound preview)
     window.playAlarm = () => {
-      if (settings?.alarm?.enabled !== false) chime(settings?.alarm?.volume ?? 0.8);
+      if (cfg.enabled !== false) playTone(cfg.tone, cfg.volume ?? 0.8);
     };
-    window.stopAlarm = () => ctx?.suspend().catch(() => {});
     return () => {
       window.removeEventListener('pointerdown', unlock);
       delete window.playAlarm;
-      delete window.stopAlarm;
     };
-  }, [settings]);
-  return null;
-};
+  }, [cfg]);
+
+  const ring = useCallback((alarm) => setQueue((q) => (q.some((a) => a.id === alarm.id) ? q : [...q, alarm])), []);
+  const close = useCallback(() => setQueue((q) => q.slice(1)), []);
+
+  useEffect(() => {
+    if (!current) return;
+    if (current.loud && cfg.enabled !== false) startRinging(cfg.tone, cfg.volume ?? 0.8);
+    const popBack = pushBackHandler(close);
+    return () => {
+      stopRinging();
+      popBack();
+    };
+  }, [current, cfg.enabled, cfg.tone, cfg.volume, close]);
+
+  const Icon = current?.kind === 'diary' ? NotebookPen : BellRing;
+  const [primary, ...rest] = current?.actions || [];
+
+  return (
+    <AlarmContext.Provider value={{ ring }}>
+      {children}
+      {current && (
+        <div className="fixed inset-0 z-[85] flex items-end justify-center" role="alertdialog" aria-modal="true" aria-labelledby="alarm-title" aria-describedby="alarm-body">
+          <div className="absolute inset-0 bg-black/60 anim-fade" />
+          <div className="relative w-full max-w-lg bg-surface rounded-t-3xl border-t border-line px-5 pt-7 pb-5 safe-bottom anim-sheet text-center">
+            <span className={cn('mx-auto grid place-items-center w-16 h-16 rounded-full bg-accent text-on-accent', current.loud && 'anim-ring')}>
+              <Icon className="w-7 h-7" />
+            </span>
+            <p className="eyebrow mt-4">{current.kind === 'diary' ? 'Diary' : current.loud ? 'Reminder' : 'Missed reminder'}</p>
+            <h2 id="alarm-title" className="font-display text-xl font-semibold mt-1 break-words">{current.title}</h2>
+            {current.body && <p id="alarm-body" className="text-sm text-muted mt-1">{current.body}</p>}
+
+            <div className="mt-6 space-y-2">
+              {primary && (
+                <button
+                  type="button"
+                  className="btn btn-primary w-full h-12 text-base"
+                  onClick={() => {
+                    close();
+                    primary.onClick?.();
+                  }}
+                >
+                  {primary.icon && <primary.icon className="w-5 h-5" />}
+                  {primary.label}
+                </button>
+              )}
+              {rest.length > 0 && (
+                <div className={cn('grid gap-2', rest.length > 1 && 'grid-cols-2')}>
+                  {rest.map((a) => (
+                    <button
+                      key={a.label}
+                      type="button"
+                      className="btn btn-ghost h-12"
+                      onClick={() => {
+                        close();
+                        a.onClick?.();
+                      }}
+                    >
+                      {a.icon && <a.icon className="w-4 h-4" />}
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button type="button" className={primary ? 'w-full py-2.5 text-sm font-semibold text-muted' : 'btn btn-primary w-full h-12 text-base'} onClick={close}>
+                {primary ? 'Dismiss' : 'Stop'}
+              </button>
+            </div>
+            {queue.length > 1 && <p className="text-xs text-subtle">{queue.length - 1} more waiting</p>}
+          </div>
+        </div>
+      )}
+    </AlarmContext.Provider>
+  );
+}

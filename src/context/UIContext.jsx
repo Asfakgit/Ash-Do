@@ -2,10 +2,13 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 
 const UIContext = createContext();
 
-export const ROUTES = ['dashboard', 'tasks', 'today', 'upcoming', 'calendar', 'focus', 'achievements', 'settings'];
+export const ROUTES = ['dashboard', 'tasks', 'calendar', 'focus', 'diary', 'achievements', 'settings'];
+// Pages that were merged into others; old links still work.
+const ALIASES = { today: 'dashboard', upcoming: 'tasks' };
 
 const routeFromHash = () => {
-  const [path, query = ''] = window.location.hash.replace(/^#\/?/, '').split('?');
+  const [raw, query = ''] = window.location.hash.replace(/^#\/?/, '').split('?');
+  const path = ALIASES[raw] || raw;
   const route = ROUTES.includes(path) ? path : 'dashboard';
   return { route, params: Object.fromEntries(new URLSearchParams(query)) };
 };

@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useCallback } from 'react';
+import React, { createContext, useContext, useCallback, useEffect } from 'react';
 import { usePersistentState } from './AuthContext';
+import { useTheme, ACCENTS } from './ThemeContext';
 import { todayISO, uid } from '../lib/tasks';
 
 const AppContext = createContext();
@@ -15,13 +16,15 @@ export const DEFAULT_WIDGETS = [
 
 export const initialSettings = {
   profile: { profileImage: null, userName: 'User' },
+  appearance: { theme: '', accent: '' }, // '' = not chosen yet; adopts the device's current look
   goals_v2: { dailyTasks: 5, dailyFocusMinutes: 50 },
   focus: { work: 25, shortBreak: 5, longBreak: 15, longBreakEvery: 4, autoStartBreaks: false },
   dashboard: { widgets: DEFAULT_WIDGETS },
   taskDisplay: { density: 'comfortable', defaultSort: 'smart', groupBy: 'date' },
   taskNotifications: { reminders: true, defaultReminder: '0' },
   customCategories: [],
-  alarm: { enabled: true, volume: 0.8 },
+  alarm: { enabled: true, volume: 0.8, tone: 'chime', snooze: 10 },
+  diary: { reminder: false, time: '21:00' },
   about: {
     appName: 'Ash Do',
     appVersion: '2.0.0',
@@ -75,14 +78,40 @@ export const AppProvider = ({ children }) => {
   const today = todayISO();
   const dailyJournal = journal[today] || {};
 
-  const updateJournalField = useCallback(
-    (field, value) => setJournal((prev) => ({ ...prev, [today]: { ...(prev[today] || {}), [field]: value } })),
-    [setJournal, today]
+  // Diary: one entry per day, { text, mood } (older entries may also have ideas/knowledge/moral/negatives).
+  const updateDiary = useCallback(
+    (date, field, value) => setJournal((prev) => ({ ...prev, [date]: { ...(prev[date] || {}), [field]: value, updated_at: new Date().toISOString() } })),
+    [setJournal]
   );
 
   const updateSettingsSection = useCallback(
     (section, key, value) => setSettings((prev) => ({ ...prev, [section]: { ...prev[section], [key]: value } })),
     [setSettings]
+  );
+
+  // Theme and accent belong to the signed-in profile. The device copy in ThemeContext
+  // only remembers the last look so the sign-in screen opens without a flash.
+  const { theme, setTheme, accentColor, setAccentColor } = useTheme();
+  useEffect(() => {
+    const { theme: t, accent: a } = settings.appearance;
+    const validTheme = ['light', 'dark', 'system'].includes(t);
+    const validAccent = ACCENTS.some((x) => x.id === a);
+    if (validTheme || validAccent) {
+      if (validTheme) setTheme(t);
+      if (validAccent) setAccentColor(a);
+    } else {
+      updateSettingsSection('appearance', 'theme', theme);
+      updateSettingsSection('appearance', 'accent', accentColor);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once per sign-in (this provider remounts per profile)
+
+  const setAppearance = useCallback(
+    (key, value) => {
+      if (key === 'theme') setTheme(value);
+      else setAccentColor(value);
+      updateSettingsSection('appearance', key === 'theme' ? 'theme' : 'accent', value);
+    },
+    [setTheme, setAccentColor, updateSettingsSection]
   );
   const setSettingsValue = useCallback((key, value) => setSettings((prev) => ({ ...prev, [key]: value })), [setSettings]);
 
@@ -117,9 +146,10 @@ export const AppProvider = ({ children }) => {
         goals,
         journal,
         dailyJournal,
-        updateJournalField,
+        updateDiary,
         updateSettingsSection,
         setSettingsValue,
+        setAppearance,
         addGoal,
         updateGoal,
         deleteGoal,

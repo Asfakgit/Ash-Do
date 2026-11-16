@@ -48,10 +48,7 @@
     --fg: #0e0e16;
     --muted: #55556a;
     --subtle: #85859a;
-    --shadow: 0 1px 2px rgba(16, 16, 40, 0.04), 0 10px 30px -18px rgba(16, 16, 40, 0.18);
     --shadow-lg: 0 24px 60px -24px rgba(16, 16, 40, 0.35);
-    --glow-a: 7%;
-    --glow-b: rgba(139, 92, 246, 0.05);
 
     /* Accent: Electric Lime (default) */
     --accent: #c2f23d;
@@ -76,21 +73,14 @@
     --fg: #f3f3f7;
     --muted: #a3a3b5;
     --subtle: #6f6f84;
-    --shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 14px 34px -20px rgba(0, 0, 0, 0.7);
     --shadow-lg: 0 30px 80px -24px rgba(0, 0, 0, 0.8);
-    --glow-a: 11%;
-    --glow-b: rgba(139, 92, 246, 0.09);
     --accent-ink: var(--ink-d);
   }
 
   html, body, #root { height: 100%; }
 
   body {
-    background:
-      radial-gradient(1100px 520px at 0% -10%, color-mix(in oklab, var(--accent) var(--glow-a), transparent), transparent 60%),
-      radial-gradient(900px 480px at 100% 0%, var(--glow-b), transparent 60%),
-      var(--bg);
-    background-attachment: fixed;
+    background: var(--bg);
     color: var(--fg);
     font-family: var(--font-sans);
     font-feature-settings: "cv11", "ss01";
@@ -126,13 +116,7 @@
   .card {
     background: var(--surface);
     border: 1px solid var(--line);
-    border-radius: 24px;
-    box-shadow: var(--shadow);
-  }
-  .glass {
-    background: color-mix(in oklab, var(--surface) 78%, transparent);
-    backdrop-filter: blur(18px) saturate(1.4);
-    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    border-radius: 18px;
   }
   .field {
     width: 100%;
@@ -177,9 +161,7 @@
   .btn-primary {
     background: var(--accent);
     color: var(--on-accent);
-    box-shadow: 0 8px 24px -10px color-mix(in oklab, var(--accent) 70%, transparent);
   }
-  .btn-primary:hover:not(:disabled) { box-shadow: 0 10px 30px -8px color-mix(in oklab, var(--accent) 85%, transparent); }
   .btn-ghost { background: var(--surface-2); color: var(--fg); border: 1px solid var(--line); }
   .btn-ghost:hover:not(:disabled) { background: var(--surface-3); }
   .btn-danger { background: rgba(244, 63, 94, 0.12); color: #e11d48; }
@@ -210,7 +192,6 @@
     border: 1px solid var(--line);
     white-space: nowrap;
   }
-  .accent-text { color: var(--accent-ink); }
   .eyebrow {
     font-size: 0.7rem;
     font-weight: 600;
@@ -228,22 +209,15 @@
 @keyframes check-pop { 0% { transform: scale(1); } 40% { transform: scale(1.25); } 100% { transform: scale(1); } }
 @keyframes shimmer { from { background-position: -400px 0; } to { background-position: 400px 0; } }
 @keyframes toast-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: none; } }
-@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 50%, transparent); } 100% { box-shadow: 0 0 0 12px transparent; } }
 
 .anim-page { animation: fade-up 0.32s cubic-bezier(0.16, 1, 0.3, 1) both; }
 .anim-fade { animation: fade-in 0.2s ease both; }
 .anim-pop { animation: pop-in 0.24s cubic-bezier(0.16, 1, 0.3, 1) both; }
 .anim-sheet { animation: sheet-up 0.32s cubic-bezier(0.16, 1, 0.3, 1) both; }
 .anim-check { animation: check-pop 0.35s ease; }
+@keyframes bell-ring { 0%, 50%, 100% { transform: rotate(0); } 10%, 30% { transform: rotate(-14deg); } 20%, 40% { transform: rotate(14deg); } }
+.anim-ring { animation: bell-ring 1.1s ease-in-out infinite; }
 .anim-toast { animation: toast-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.anim-pulse { animation: pulse-ring 1.6s ease-out infinite; }
-.stagger > * { animation: fade-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.stagger > *:nth-child(2) { animation-delay: 40ms; }
-.stagger > *:nth-child(3) { animation-delay: 80ms; }
-.stagger > *:nth-child(4) { animation-delay: 120ms; }
-.stagger > *:nth-child(5) { animation-delay: 160ms; }
-.stagger > *:nth-child(6) { animation-delay: 200ms; }
-.stagger > *:nth-child(n+7) { animation-delay: 240ms; }
 
 .skeleton {
   background: linear-gradient(90deg, var(--surface-2) 0px, var(--surface-3) 120px, var(--surface-2) 240px);
@@ -283,9 +257,6 @@
 }
 
 .modal-anim { animation: sheet-up 0.32s cubic-bezier(0.16, 1, 0.3, 1) both; }
-@media (min-width: 640px) {
-  .modal-anim { animation: pop-in 0.24s cubic-bezier(0.16, 1, 0.3, 1) both; }
-}
 .safe-top { padding-top: max(1rem, env(safe-area-inset-top)); }
 .safe-top-bar { padding-top: env(safe-area-inset-top); }
 .keyboard-open .hide-on-keyboard { display: none !important; }

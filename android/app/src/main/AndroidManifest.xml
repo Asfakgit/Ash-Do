@@ -44,4 +44,6 @@
          The INTERNET permission (added by Capacitor's template) is removed so Android itself guarantees
          that no user data can leave the device. -->
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <!-- In-app alarm vibrates while it rings (granted automatically, no prompt). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>

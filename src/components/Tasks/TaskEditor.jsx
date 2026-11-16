@@ -122,7 +122,7 @@ function EditorDialog({ editor, onClose, toast }) {
   const tagSuggestions = allTags.filter((t) => !form.tags.includes(t) && (!tagInput || t.startsWith(tagInput.toLowerCase()))).slice(0, 6);
 
   return (
-    <Modal open onClose={onClose} fullOnMobile className="sm:max-w-2xl" labelledBy="task-editor-title">
+    <Modal open onClose={onClose} fullOnMobile labelledBy="task-editor-title">
       <form onSubmit={save} onKeyDown={onKeyDown} className="flex flex-col min-h-0 h-full">
         <header className="flex items-center justify-between gap-3 px-5 pt-4 pb-3 border-b border-line safe-top">
           <h2 id="task-editor-title" className="font-display font-semibold text-lg">
@@ -240,7 +240,7 @@ function EditorDialog({ editor, onClose, toast }) {
             </div>
           </div>
 
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid gap-3">
             <div>
               <label className="label" htmlFor="te-reminder">Reminder</label>
               <select
@@ -338,7 +338,7 @@ function EditorDialog({ editor, onClose, toast }) {
                   <button
                     type="button"
                     aria-label="Remove subtask"
-                    className="icon-btn w-7 h-7 sm:opacity-0 group-hover:opacity-100"
+                    className="icon-btn w-7 h-7"
                     onClick={() => set({ subtasks: form.subtasks.filter((x) => x.id !== s.id) })}
                   >
                     <X className="w-3.5 h-3.5" />
@@ -384,7 +384,7 @@ function EditorDialog({ editor, onClose, toast }) {
                 ))}
               </div>
             )}
-            <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex flex-col gap-2">
               <input
                 value={link.url}
                 onChange={(e) => setLink({ ...link, url: e.target.value })}
@@ -454,8 +454,7 @@ function EditorDialog({ editor, onClose, toast }) {
               )}
             </>
           )}
-          <span className="hidden sm:block flex-1 text-xs text-subtle text-right pr-2">Ctrl/⌘ + Enter to save</span>
-          <span className="flex-1 sm:hidden" />
+          <span className="flex-1" />
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cancel
           </button>

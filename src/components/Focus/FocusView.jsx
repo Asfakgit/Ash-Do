@@ -25,8 +25,7 @@ function TimerPanel({ immersive, setImmersive }) {
   return (
     <div className={cn('flex flex-col items-center text-center', immersive && 'justify-center min-h-full')}>
       <Segmented options={FOCUS_MODES} value={timer.mode} onChange={setMode} size="sm" />
-      <div className="relative my-8">
-        {timer.running && <div className={cn('absolute inset-6 rounded-full blur-3xl opacity-40', isBreak ? 'bg-cyan-400' : 'bg-accent')} />}
+      <div className="relative my-6">
         <ProgressRing value={progress} size={size} stroke={immersive ? 12 : 10} color={isBreak ? '#22d3ee' : 'var(--accent)'}>
           <div>
             <p className="font-display font-semibold tabular-nums tracking-tight" style={{ fontSize: immersive ? 72 : 56, lineHeight: 1 }} aria-live="off">
@@ -45,7 +44,7 @@ function TimerPanel({ immersive, setImmersive }) {
           <RotateCcw className="w-5 h-5" />
         </button>
         <button
-          className={cn('btn btn-primary w-36 h-14 text-base rounded-2xl', !timer.running && 'anim-pulse')}
+          className="btn btn-primary w-36 h-14 text-base rounded-2xl"
           onClick={timer.running ? pause : start}
         >
           {timer.running ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
@@ -56,7 +55,7 @@ function TimerPanel({ immersive, setImmersive }) {
         </button>
       </div>
 
-      <div className="w-full max-w-md mt-8">
+      <div className="w-full mt-6">
         <label className="label text-left" htmlFor="focus-task">Focusing on</label>
         <div className="flex gap-2">
           <select id="focus-task" className="field" value={timer.taskId} onChange={(e) => setTaskId(e.target.value)}>
@@ -142,16 +141,9 @@ export function FocusView() {
   }
 
   return (
-    <div className="space-y-5">
-      <div>
-        <p className="eyebrow flex items-center gap-1.5">
-          <Timer className="w-3.5 h-3.5" /> {stats.focusToday} of {stats.focusGoal} minutes today
-        </p>
-        <h1 className="font-display text-3xl font-semibold tracking-tight mt-1">Focus Mode</h1>
-      </div>
-
-      <div className="grid xl:grid-cols-[1fr_360px] gap-4 items-start">
-        <Card className="py-8">
+    <div className="space-y-4">
+      <div className="space-y-4">
+        <Card className="py-6">
           <TimerPanel immersive={false} setImmersive={setImmersive} />
         </Card>
 
@@ -160,7 +152,7 @@ export function FocusView() {
             <div className="grid grid-cols-3 gap-2 text-center">
               {[
                 { v: todaySessions.filter((s) => s.completed).length, l: 'Sessions today' },
-                { v: `${stats.focusToday}m`, l: 'Focus today' },
+                { v: `${stats.focusToday}/${stats.focusGoal}m`, l: 'Focus today' },
                 { v: `${Math.floor(weekMinutes / 60)}h ${weekMinutes % 60}m`, l: 'This week' },
               ].map((x) => (
                 <div key={x.l} className="rounded-2xl bg-surface-2 p-3">

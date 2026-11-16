@@ -86,9 +86,8 @@ export function QuickAdd({ defaults = {}, autoFocus = false, className, placehol
         >
           <SlidersHorizontal className="w-4 h-4" />
         </button>
-        <button type="submit" disabled={!parsed.title} className="btn btn-primary px-3 py-2">
+        <button type="submit" disabled={!parsed.title} className="btn btn-primary px-3 py-2" aria-label="Add task">
           <CornerDownLeft className="w-4 h-4" />
-          <span className="hidden sm:inline">Add</span>
         </button>
       </div>
       {value && <ParsedChips parsed={parsed} className="mt-2 px-1" />}

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, WifiOff, Timer, User, Settings, LogOut, AlertTriangle, Clock, CloudOff, HardDrive } from 'lucide-react';
-import { Sidebar, BottomNav, ALL_NAV } from './Navigation';
+import { Bell, WifiOff, Timer, NotebookPen, Trophy, Settings, LogOut, AlertTriangle, Clock, CloudOff, HardDrive } from 'lucide-react';
+import { BottomNav, ALL_NAV } from './Navigation';
 import { useUI } from '../context/UIContext';
 import { useTasks } from '../context/TaskContext';
 import { useApp } from '../context/AppContext';
@@ -115,30 +115,30 @@ function TopBar() {
   const page = ALL_NAV.find((n) => n.id === route);
 
   return (
-    <header className="sticky top-0 z-20 glass border-b border-line safe-top-bar">
-      <div className="flex items-center gap-2 h-14 md:h-16 px-4 md:px-8 max-w-7xl mx-auto">
-        <img src="/icons/logo-128.png" alt="" className="md:hidden w-8 h-8 rounded-xl object-cover" />
-        <p className="font-display font-semibold text-base md:text-lg truncate flex-1">{page?.label || 'Ash Do'}</p>
+    <header className="shrink-0 bg-bg border-b border-line safe-top-bar">
+      <div className="flex items-center gap-2 h-14 px-4">
+        <p className="font-display font-semibold text-lg truncate flex-1">{page?.label || 'Ash Do'}</p>
         {!online && (
-          <span className="chip py-1 px-2.5" title="You're offline. Everything still works and is saved on this device.">
-            <WifiOff className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Offline</span>
+          <span className="chip py-1 px-2" title="You're offline. Everything still works and is saved on this device." aria-label="Offline">
+            <WifiOff className="w-3.5 h-3.5" />
           </span>
         )}
         {syncStatus === 'error' && (
-          <span className="chip py-1 px-2.5 border-transparent bg-rose-500/12 text-rose-500" title="Couldn't save to device storage. Retrying automatically.">
-            <CloudOff className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Not saved</span>
+          <span className="chip py-1 px-2 border-transparent bg-rose-500/12 text-rose-500" title="Couldn't save to device storage. Retrying automatically." aria-label="Not saved">
+            <CloudOff className="w-3.5 h-3.5" />
           </span>
         )}
         <FocusPill />
         <NotificationsButton />
         <Menu
           trigger={({ toggle }) => (
-            <button type="button" onClick={toggle} aria-label="Profile menu" className="rounded-xl hover:ring-2 hover:ring-line-strong transition">
-              <Avatar src={settings.profile?.profileImage} name={settings.profile?.userName || user?.name} size={34} />
+            <button type="button" onClick={toggle} aria-label="Profile menu" className="rounded-full">
+              <Avatar src={settings.profile?.profileImage} name={settings.profile?.userName || user?.name} size={32} className="rounded-full" />
             </button>
           )}
           items={[
-            { label: 'Profile', icon: User, onClick: () => navigate('settings', { section: 'profile' }) },
+            { label: 'Diary', icon: NotebookPen, onClick: () => navigate('diary') },
+            { label: 'Achievements', icon: Trophy, onClick: () => navigate('achievements') },
             { label: 'Settings', icon: Settings, onClick: () => navigate('settings') },
             { label: 'Data & backup', icon: HardDrive, onClick: () => navigate('settings', { section: 'data' }) },
             'divider',
@@ -150,6 +150,8 @@ function TopBar() {
   );
 }
 
+// Phone-only layout: one column, top bar, bottom tabs. On wider screens the
+// same phone-width column is centred, so the app looks the same everywhere.
 export const ResponsiveLayout = ({ children }) => {
   const { route } = useUI();
   const mainRef = useRef(null);
@@ -157,16 +159,13 @@ export const ResponsiveLayout = ({ children }) => {
     mainRef.current?.scrollTo({ top: 0 });
   }, [route]);
   return (
-    <div className="flex h-[100dvh] w-full overflow-hidden">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <main ref={mainRef} className="flex-1 overflow-y-auto overflow-x-hidden">
-          <TopBar />
-          <div key={route} className="anim-page max-w-7xl mx-auto px-4 md:px-8 pt-5 md:pt-7 pb-36 md:pb-12">
-            {children}
-          </div>
-        </main>
-      </div>
+    <div className="flex flex-col h-[100dvh] w-full max-w-lg mx-auto overflow-hidden">
+      <TopBar />
+      <main ref={mainRef} className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div key={route} className="anim-page px-4 pt-4 pb-8">
+          {children}
+        </div>
+      </main>
       <BottomNav />
     </div>
   );

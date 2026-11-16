@@ -1,8 +1,9 @@
-import React from 'react';
-import { Trophy, Flame, Zap, Crown, CalendarCheck, Lock, Sparkles, Target, Timer, Brain, Sunrise } from 'lucide-react';
+import React, { useState } from 'react';
+import { Trophy, Flame, Zap, Crown, CalendarCheck, Lock, Sparkles, Target, Timer, Brain, Sunrise, Flag, Minus, Plus, X, Trash2 } from 'lucide-react';
 import { useTasks } from '../../context/TaskContext';
+import { useApp } from '../../context/AppContext';
 import { XP_PER_LEVEL, addDays, startOfWeek, toISODate } from '../../lib/tasks';
-import { Card, CardHeader, ProgressBar, cn } from '../ui';
+import { Card, CardHeader, EmptyState, ProgressBar, cn } from '../ui';
 
 const ICONS = { Sparkles, Flame, Target, Zap, Timer, Brain, Sunrise, Crown, Trophy };
 const LEVEL_TITLES = ['Rookie', 'Starter', 'Achiever', 'Pro', 'Expert', 'Master', 'Legend', 'Mythic'];
@@ -29,7 +30,7 @@ function Heatmap({ perDay }) {
               <span
                 key={c.iso}
                 title={`${c.iso}: ${c.n} completed`}
-                className={cn('w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-[4px]', c.future ? 'bg-transparent' : shade[level(c.n)])}
+                className={cn('w-3.5 h-3.5 rounded-[4px]', c.future ? 'bg-transparent' : shade[level(c.n)])}
               />
             ))}
           </div>
@@ -46,6 +47,68 @@ function Heatmap({ perDay }) {
   );
 }
 
+function GoalsCard() {
+  const { goals, addGoal, updateGoalProgress, deleteGoal } = useApp();
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ title: '', targetDate: '' });
+  const submit = (e) => {
+    e.preventDefault();
+    const title = form.title.trim();
+    if (!title) return;
+    addGoal({ title: title.slice(0, 80), targetDate: form.targetDate });
+    setForm({ title: '', targetDate: '' });
+    setAdding(false);
+  };
+  return (
+    <Card>
+      <CardHeader
+        icon={Flag}
+        title="Goals"
+        subtitle={goals.length ? `${goals.filter((g) => g.progress >= 100).length} of ${goals.length} achieved` : 'Your bigger picture'}
+        action={
+          <button type="button" className="icon-btn" aria-label="Add goal" onClick={() => setAdding((a) => !a)}>
+            {adding ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          </button>
+        }
+      />
+      {adding && (
+        <form onSubmit={submit} className="flex flex-col gap-2 mb-3 anim-pop">
+          <input className="field flex-1" placeholder="e.g. Run 5K, Ship side project" value={form.title} maxLength={80} autoFocus onChange={(e) => setForm({ ...form, title: e.target.value })} aria-label="Goal title" />
+          <input type="date" className="field" value={form.targetDate} onChange={(e) => setForm({ ...form, targetDate: e.target.value })} aria-label="Target date" />
+          <button className="btn btn-primary" disabled={!form.title.trim()}>Add</button>
+        </form>
+      )}
+      {goals.length ? (
+        <ul className="space-y-3">
+          {goals.map((g) => (
+            <li key={g.id}>
+              <div className="flex items-center gap-2">
+                <span className={cn('flex-1 text-sm font-medium truncate', g.progress >= 100 && 'text-accent-ink')}>{g.title}</span>
+                {g.targetDate && <span className="text-[11px] text-subtle">by {new Date(g.targetDate + 'T00:00').toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>}
+                <span className="text-xs font-semibold tabular-nums w-9 text-right">{g.progress}%</span>
+              </div>
+              <div className="flex items-center gap-2 mt-1.5">
+                <button type="button" className="icon-btn w-7 h-7 border border-line" aria-label={`Decrease progress of ${g.title}`} onClick={() => updateGoalProgress(g.id, g.progress - 10)}>
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <ProgressBar value={g.progress / 100} className="flex-1" />
+                <button type="button" className="icon-btn w-7 h-7 border border-line" aria-label={`Increase progress of ${g.title}`} onClick={() => updateGoalProgress(g.id, g.progress + 10)}>
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+                <button type="button" className="icon-btn w-7 h-7 hover:text-rose-500" aria-label={`Delete goal ${g.title}`} onClick={() => deleteGoal(g.id)}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <EmptyState className="py-4" icon={Flag} title="No goals yet" text="Add something you're working towards." />
+      )}
+    </Card>
+  );
+}
+
 export function AchievementsView() {
   const { stats, achievementsSeen: seen } = useTasks();
   const unlocked = stats.achievements.filter((a) => a.unlocked).length;
@@ -58,21 +121,13 @@ export function AchievementsView() {
   });
 
   return (
-    <div className="space-y-5">
-      <div>
-        <p className="eyebrow flex items-center gap-1.5">
-          <Trophy className="w-3.5 h-3.5" /> {unlocked} of {stats.achievements.length} unlocked
-        </p>
-        <h1 className="font-display text-3xl font-semibold tracking-tight mt-1">Achievements</h1>
-      </div>
-
-      <div className="grid md:grid-cols-6 xl:grid-cols-12 gap-4 stagger">
-        <Card className="md:col-span-6 xl:col-span-7 relative overflow-hidden">
-          <div className="absolute -top-20 -right-10 w-64 h-64 rounded-full bg-accent/20 blur-3xl pointer-events-none" />
-          <div className="relative flex items-center gap-5">
-            <div className="relative grid place-items-center w-24 h-24 rounded-[28px] bg-gradient-to-br from-accent to-cyan-400 text-on-accent shadow-lg shrink-0">
-              <Crown className="absolute -top-3 w-6 h-6 text-amber-400 drop-shadow" />
-              <span className="font-display text-4xl font-bold">{stats.level}</span>
+    <div className="space-y-4">
+      <div className="space-y-4">
+        <Card>
+          <div className="flex items-center gap-4">
+            <div className="relative grid place-items-center w-16 h-16 rounded-2xl bg-accent text-on-accent shrink-0">
+              <Crown className="absolute -top-2.5 w-5 h-5 text-amber-400" />
+              <span className="font-display text-3xl font-bold">{stats.level}</span>
             </div>
             <div className="flex-1 min-w-0">
               <p className="eyebrow">Level {stats.level} · {title}</p>
@@ -81,12 +136,12 @@ export function AchievementsView() {
               <p className="text-xs text-muted mt-1.5">{XP_PER_LEVEL - stats.levelXP} XP to level {stats.level + 1}</p>
             </div>
           </div>
-          <p className="relative text-xs text-subtle mt-5">
-            XP comes from completed tasks (Low 10 · Medium 20 · High 30 · Urgent 50, +2 per subtask) and focus time (1 XP per minute).
+          <p className="text-xs text-subtle mt-4">
+            Earn XP by finishing tasks and focusing.
           </p>
         </Card>
 
-        <Card className="md:col-span-6 xl:col-span-5">
+        <Card>
           <CardHeader icon={Flame} title="Streak" subtitle="Days in a row with at least one completed task" />
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-2xl bg-orange-500/10 p-4">
@@ -124,26 +179,30 @@ export function AchievementsView() {
           </div>
         </Card>
 
-        <Card className="md:col-span-6 xl:col-span-12">
+        <GoalsCard />
+
+        <Card>
           <CardHeader icon={CalendarCheck} title="Consistency" subtitle="Completed tasks per day, last 15 weeks" />
           <Heatmap perDay={stats.perDay} />
         </Card>
       </div>
 
       <div>
-        <h2 className="font-display font-semibold text-lg mb-3">Badges</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 stagger">
+        <h2 className="px-1 mb-2 text-xs font-semibold uppercase tracking-wider text-subtle">
+          Badges <span className="font-medium opacity-70">{unlocked}/{stats.achievements.length}</span>
+        </h2>
+        <div className="grid grid-cols-2 gap-3">
           {stats.achievements.map((a) => {
             const Icon = ICONS[a.icon] || Trophy;
             return (
               <div
                 key={a.id}
-                className={cn('card p-4 flex flex-col items-center text-center transition-transform', a.unlocked ? 'hover:-translate-y-0.5' : 'opacity-70')}
+                className={cn('card p-4 flex flex-col items-center text-center', !a.unlocked && 'opacity-70')}
               >
                 <div
                   className={cn(
                     'relative grid place-items-center w-14 h-14 rounded-2xl mb-3',
-                    a.unlocked ? 'bg-gradient-to-br from-accent to-violet-500 text-white shadow-lg' : 'bg-surface-3 text-subtle'
+                    a.unlocked ? 'bg-accent text-on-accent' : 'bg-surface-3 text-subtle'
                   )}
                 >
                   <Icon className="w-6 h-6" />

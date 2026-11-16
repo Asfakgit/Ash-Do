@@ -114,10 +114,53 @@ export async function exactAlarmStatus() {
 export async function requestExactAlarms() {
   try {
     lastScheduled = ''; // reschedule with the new precision
+    lastDiary = '';
     return (await LocalNotifications.changeExactNotificationSetting()).exact_alarm;
   } catch {
     return 'unsupported';
   }
+}
+
+// Android notification channels. A channel's sound can't change after it is created,
+// so the ids carry a version: bump it if the sound file changes.
+const CHANNEL_TASK = 'ashdo_alarm_v1';
+const CHANNEL_DIARY = 'ashdo_diary_v1';
+let channelsReady = null;
+function ensureChannels() {
+  if (!isNative || platform !== 'android') return Promise.resolve();
+  channelsReady ||= Promise.all([
+    LocalNotifications.createChannel({
+      id: CHANNEL_TASK,
+      name: 'Task alarms',
+      description: 'Task reminders, with the alarm sound',
+      importance: 5,
+      sound: 'ashdo_alarm.wav',
+      vibration: true,
+      lights: true,
+      lightColor: '#C2F23D',
+    }),
+    LocalNotifications.createChannel({
+      id: CHANNEL_DIARY,
+      name: 'Diary reminder',
+      description: 'Daily reminder to write your diary',
+      importance: 4,
+      sound: 'ashdo_diary.wav',
+      vibration: true,
+    }),
+  ]).catch((e) => {
+    channelsReady = null;
+    console.warn('Could not create notification channels', e);
+  });
+  return channelsReady;
+}
+
+export const diaryNotificationId = (date) => notificationId(`diary|${date}`);
+const isDiary = (n) => n.extra?.kind === 'diary';
+
+async function cancelPending(filter) {
+  const pending = await LocalNotifications.getPending();
+  const ids = pending.notifications.filter(filter).map((n) => ({ id: n.id }));
+  if (ids.length) await LocalNotifications.cancel({ notifications: ids });
 }
 
 // Android: hand reminders to the OS so they fire even when Ash Do is closed.
@@ -130,8 +173,8 @@ export async function syncScheduledReminders(reminders) {
   try {
     const perm = await LocalNotifications.checkPermissions();
     if (perm.display !== 'granted') return;
-    const pending = await LocalNotifications.getPending();
-    if (pending.notifications.length) await LocalNotifications.cancel({ notifications: pending.notifications.map((n) => ({ id: n.id })) });
+    await ensureChannels();
+    await cancelPending((n) => !isDiary(n));
     if (!reminders.length) return;
     const exact = (await exactAlarmStatus()) === 'granted';
     await LocalNotifications.schedule({
@@ -141,8 +184,9 @@ export async function syncScheduledReminders(reminders) {
         body: r.body,
         schedule: { at: new Date(r.at), allowWhileIdle: true },
         isExactNotification: exact, // never pops the system settings screen on its own
+        channelId: CHANNEL_TASK,
         smallIcon: 'ic_stat_ashdo',
-        extra: { taskId: r.taskId },
+        extra: { kind: 'task', taskId: r.taskId },
       })),
     });
   } catch (e) {
@@ -151,9 +195,70 @@ export async function syncScheduledReminders(reminders) {
   }
 }
 
+// Diary: one notification per upcoming day (not a repeating one), so a day that
+// already has an entry can be skipped and reminders keep coming if the app isn't opened.
+let lastDiary = '';
+export async function syncDiaryReminders(list) {
+  if (!isNative) return;
+  const signature = JSON.stringify(list.map((r) => [r.date, r.at]));
+  if (signature === lastDiary) return;
+  lastDiary = signature;
+  try {
+    const perm = await LocalNotifications.checkPermissions();
+    if (perm.display !== 'granted') return;
+    await ensureChannels();
+    await cancelPending(isDiary);
+    if (!list.length) return;
+    const exact = (await exactAlarmStatus()) === 'granted';
+    await LocalNotifications.schedule({
+      notifications: list.map((r) => ({
+        id: diaryNotificationId(r.date),
+        title: r.title,
+        body: r.body,
+        schedule: { at: new Date(r.at), allowWhileIdle: true },
+        isExactNotification: exact,
+        channelId: CHANNEL_DIARY,
+        smallIcon: 'ic_stat_ashdo',
+        extra: { kind: 'diary', date: r.date },
+      })),
+    });
+  } catch (e) {
+    lastDiary = '';
+    console.warn('Could not schedule diary reminders', e);
+  }
+}
+
+// When the in-app alarm takes over, remove the system notification for the same reminder
+// so its sound doesn't play on top.
+export async function dismissDelivered(id) {
+  if (!isNative) return;
+  try {
+    await LocalNotifications.removeDeliveredNotificationsById({ ids: [id] });
+  } catch {
+    /* already gone */
+  }
+}
+
+// On sign-out: drop every reminder the OS is holding for this profile, so the next
+// person to use the phone never sees someone else's task titles.
+export async function clearScheduledReminders() {
+  lastScheduled = '';
+  lastDiary = '';
+  if (!isNative) return;
+  try {
+    await cancelPending(() => true);
+  } catch (e) {
+    console.warn('Could not clear reminders', e);
+  }
+}
+
+// handler receives the notification's extra: { kind: 'task', taskId } | { kind: 'diary', date }
 export async function onNotificationTap(handler) {
   if (!isNative) return () => {};
-  const sub = await LocalNotifications.addListener('localNotificationActionPerformed', (a) => handler(a.notification?.extra?.taskId));
+  const sub = await LocalNotifications.addListener('localNotificationActionPerformed', (a) => {
+    const extra = a.notification?.extra || {};
+    handler(extra.kind ? extra : { kind: 'task', taskId: extra.taskId });
+  });
   return () => sub.remove();
 }
 

@@ -1,17 +1,20 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import * as db from '../lib/db';
 import { collectLegacyData, clearLegacyData } from '../lib/legacy';
+import { clearScheduledReminders } from '../lib/native';
 import { useUI } from './UIContext';
 
 // Holds the signed-in local profile, its decrypted data snapshot and a write queue
 // that persists changes to IndexedDB (encrypted) in the background.
+// Every profile on the phone has its own username, password and encrypted data;
+// signing in to one never exposes another's tasks, settings, theme or reminders.
 const AuthContext = createContext();
 const SessionContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [state, setState] = useState({ status: 'booting', user: null, key: null, snapshot: null, error: '' });
   const [users, setUsers] = useState([]);
-  const { resetUI } = useUI();
+  const { resetUI, navigate } = useUI();
 
   const refreshUsers = useCallback(async () => {
     try {
@@ -46,8 +49,8 @@ export const AuthProvider = ({ children }) => {
   }, [enter, refreshUsers]);
 
   const register = useCallback(
-    async ({ name, email, password, remember = true, importLegacy = false }) => {
-      const { user, key } = await db.createUser({ name, email, password });
+    async ({ username, password, remember = true, importLegacy = false }) => {
+      const { user, key } = await db.createUser({ username, password });
       const puts = [{ kind: 'kv', rid: 'settings', value: { profile: { userName: user.name, profileImage: null } } }];
       let notice = '';
       if (importLegacy) {
@@ -68,29 +71,37 @@ export const AuthProvider = ({ children }) => {
       if (!importLegacy || !notice) await db.writeRecords(user.id, key, puts);
       if (remember) await db.saveSession(user.id, key);
       await refreshUsers();
+      navigate('dashboard'); // every sign-in starts on Today, never on the previous person's page
       await enter(user, key, notice);
     },
-    [enter, refreshUsers]
+    [enter, refreshUsers, navigate]
   );
 
   const login = useCallback(
-    async ({ email, password, remember = true }) => {
-      const { user, key } = await db.verifyLogin(email, password);
+    async ({ username, password, remember = true }) => {
+      const { user, key } = await db.verifyLogin(username, password);
       if (remember) await db.saveSession(user.id, key);
       else await db.clearSession();
       await refreshUsers();
+      navigate('dashboard');
       await enter(user, key);
     },
-    [enter, refreshUsers]
+    [enter, refreshUsers, navigate]
   );
+
+  const signOut = useCallback(async () => {
+    resetUI();
+    setState({ status: 'signedOut', user: null, key: null, snapshot: null, error: '' });
+    await clearScheduledReminders();
+    navigate('dashboard');
+    await refreshUsers();
+  }, [refreshUsers, resetUI, navigate]);
 
   const logout = useCallback(async () => {
     await window.__ashdoFlush?.();
     await db.clearSession().catch(() => {});
-    resetUI();
-    setState({ status: 'signedOut', user: null, key: null, snapshot: null, error: '' });
-    await refreshUsers();
-  }, [refreshUsers, resetUI]);
+    await signOut();
+  }, [signOut]);
 
   const renameUser = useCallback(async (name) => {
     const u = await db.updateUserName(state.user?.id, name);
@@ -107,13 +118,13 @@ export const AuthProvider = ({ children }) => {
   );
 
   const deleteProfile = useCallback(async () => {
+    await window.__ashdoFlush?.(); // finish pending saves first so none land after the delete
     await db.deleteUser(state.user.id);
-    resetUI();
-    setState({ status: 'signedOut', user: null, key: null, snapshot: null, error: '' });
-    await refreshUsers();
-  }, [state.user]); // eslint-disable-line react-hooks/exhaustive-deps
+    await signOut();
+  }, [state.user, signOut]);
 
   const wipeDevice = useCallback(async () => {
+    await clearScheduledReminders();
     await db.wipeEverything();
     window.location.reload();
   }, []);

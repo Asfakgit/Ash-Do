@@ -9,7 +9,7 @@ import { useApp } from '../../context/AppContext';
 import { categoryColor, formatDue, isDone, isOverdue, PRIORITY_MAP } from '../../lib/tasks';
 import { cn, Menu, TaskCheck } from '../ui';
 
-export function TaskItem({ task, showDate = true, draggable = false, compact: compactProp }) {
+export function TaskItem({ task, showDate = true, compact: compactProp }) {
   const { toggleComplete, deleteTask, duplicateTask, archiveTask, updateTask, categories } = useTasks();
   const { openEditor, navigate } = useUI();
   const { setTaskId } = useFocus();
@@ -30,11 +30,6 @@ export function TaskItem({ task, showDate = true, draggable = false, compact: co
     <div
       role="button"
       tabIndex={0}
-      draggable={draggable}
-      onDragStart={(e) => {
-        e.dataTransfer.setData('text/task-id', task.task_id);
-        e.dataTransfer.effectAllowed = 'move';
-      }}
       onClick={() => openEditor({ task })}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;
@@ -45,7 +40,7 @@ export function TaskItem({ task, showDate = true, draggable = false, compact: co
         }
       }}
       className={cn(
-        'group relative flex items-start gap-3 rounded-2xl px-3 transition-all duration-300 hover:bg-surface-2 focus-visible:bg-surface-2 cursor-pointer',
+        'relative flex items-start gap-3 rounded-2xl px-3 transition-all duration-300 active:bg-surface-2 focus-visible:bg-surface-2 cursor-pointer',
         compact ? 'py-2' : 'py-3',
         leaving && 'opacity-50 translate-x-1',
         done && !leaving && 'opacity-60'
@@ -109,7 +104,7 @@ export function TaskItem({ task, showDate = true, draggable = false, compact: co
             type="button"
             aria-label="Task actions"
             onClick={toggle}
-            className={cn('icon-btn -mr-1 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100', open && 'md:opacity-100 bg-surface-3')}
+            className={cn('icon-btn -mr-1 text-subtle', open && 'bg-surface-3')}
           >
             <MoreHorizontal className="w-4 h-4" />
           </button>

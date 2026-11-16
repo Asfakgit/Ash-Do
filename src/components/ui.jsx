@@ -112,11 +112,8 @@ export const TaskCheck = ({ checked, onToggle, priority, size = 'md', label }) =
 
 export const EmptyState = ({ icon: Icon, title, text, action, className }) => (
   <div className={cn('flex flex-col items-center justify-center text-center py-10 px-6', className)}>
-    <div className="relative mb-4">
-      <div className="absolute inset-0 rounded-3xl bg-accent/25 blur-xl" />
-      <div className="relative grid place-items-center w-14 h-14 rounded-2xl bg-surface-2 border border-line">
-        {Icon && <Icon className="w-6 h-6 text-accent-ink" />}
-      </div>
+    <div className="grid place-items-center w-12 h-12 rounded-2xl bg-surface-2 mb-3">
+      {Icon && <Icon className="w-6 h-6 text-subtle" />}
     </div>
     <p className="font-display font-semibold">{title}</p>
     {text && <p className="text-sm text-muted mt-1 max-w-xs">{text}</p>}
@@ -200,13 +197,13 @@ export function Modal({ open, onClose, children, className, labelledBy, fullOnMo
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby={labelledBy}>
+    <div className="fixed inset-0 z-[70] flex items-end justify-center" role="dialog" aria-modal="true" aria-labelledby={labelledBy}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm anim-fade" onClick={onClose} />
       <div
         ref={ref}
         className={cn(
-          'relative w-full bg-surface border border-line shadow-[var(--shadow-lg)] flex flex-col max-h-[100dvh] sm:max-h-[90dvh]',
-          fullOnMobile ? 'h-[100dvh] sm:h-auto rounded-none sm:rounded-3xl' : 'rounded-t-3xl sm:rounded-3xl max-h-[92dvh]',
+          'relative w-full max-w-lg bg-surface border border-line shadow-[var(--shadow-lg)] flex flex-col max-h-[100dvh]',
+          fullOnMobile ? 'h-[100dvh] rounded-none' : 'rounded-t-3xl max-h-[92dvh]',
           'modal-anim',
           className
         )}
@@ -278,7 +275,7 @@ export function Toaster() {
   const { toasts, dismissToast } = useUI();
   const icons = { success: CheckCircle2, reward: Trophy, default: Info, error: Info };
   return (
-    <div className="fixed z-[90] top-[calc(env(safe-area-inset-top)+4rem)] md:top-auto md:bottom-6 left-1/2 -translate-x-1/2 md:left-auto md:right-6 md:translate-x-0 w-[calc(100%-2rem)] max-w-sm space-y-2 pointer-events-none" aria-live="polite">
+    <div className="fixed z-[90] top-[calc(env(safe-area-inset-top)+4rem)] left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-sm space-y-2 pointer-events-none" aria-live="polite">
       {toasts.map((t) => {
         const Icon = icons[t.tone] || Info;
         return (

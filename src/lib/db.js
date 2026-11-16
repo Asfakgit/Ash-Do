@@ -1,7 +1,7 @@
 // Ash Do local database: IndexedDB + Web Crypto. No network, no dependencies.
 //
 // Stores
-//   users   { id, name, email, salt, keySalt, iterations, verifier, created_at, last_login, account_status }
+//   users   { id, name, username, salt, keySalt, iterations, verifier, created_at, last_login, account_status }
 //   records { id: `${user_id}|${kind}|${rid}`, user_id, kind, rid, iv, data, updated_at }  (data = AES-GCM ciphertext)
 //   meta    { key, ... }  ('session' -> remembered sign-in on this device)
 //
@@ -9,7 +9,7 @@
 // Passwords are never stored; only a salted PBKDF2 verifier is kept.
 
 const DB_NAME = 'ashdo';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // v2: sign in with a username instead of an email
 const ITERATIONS = 310000;
 
 export class DBError extends Error {
@@ -22,17 +22,51 @@ export class DBError extends Error {
 export const isSupported = () =>
   typeof indexedDB !== 'undefined' && typeof crypto !== 'undefined' && Boolean(crypto.subtle) && window.isSecureContext !== false;
 
+// ---------- usernames ----------
+export const normalizeUsername = (u) => String(u || '').trim().toLowerCase();
+
+export function validateUsername(u) {
+  const n = normalizeUsername(u);
+  if (n.length < 3) return 'Use at least 3 characters';
+  if (n.length > 20) return 'Use 20 characters or fewer';
+  if (!/^[a-z0-9._-]+$/.test(n)) return 'Use only letters, numbers, . _ or -';
+  return '';
+}
+
+// v1 profiles signed in with an email. Give each one a unique username taken from
+// the part before the @ (e.g. "ash@x.com" -> "ash", or "ash2" if that is taken).
+function migrateToUsernames(store) {
+  if (!store.indexNames.contains('username')) store.createIndex('username', 'username', { unique: true });
+  if (store.indexNames.contains('email')) store.deleteIndex('email');
+  const all = store.getAll();
+  all.onsuccess = () => {
+    const taken = new Set(all.result.map((u) => u.username).filter(Boolean));
+    for (const u of all.result) {
+      if (u.username) continue;
+      let base = normalizeUsername(String(u.email || u.name || '').split('@')[0]).replace(/[^a-z0-9._-]/g, '').slice(0, 16);
+      if (base.length < 3) base = (base + 'user').slice(0, 16);
+      let name = base;
+      for (let i = 2; taken.has(name); i++) name = `${base}${i}`;
+      taken.add(name);
+      u.username = name;
+      delete u.email;
+      store.put(u);
+    }
+  };
+}
+
 // ---------- IndexedDB plumbing ----------
 let dbPromise = null;
 export function openDB() {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (event) => {
       const db = req.result;
       if (!db.objectStoreNames.contains('users')) {
-        const users = db.createObjectStore('users', { keyPath: 'id' });
-        users.createIndex('email', 'email', { unique: true });
+        db.createObjectStore('users', { keyPath: 'id' }).createIndex('username', 'username', { unique: true });
+      } else if (event.oldVersion < 2) {
+        migrateToUsernames(req.transaction.objectStore('users'));
       }
       if (!db.objectStoreNames.contains('records')) {
         const records = db.createObjectStore('records', { keyPath: 'id' });
@@ -133,10 +167,7 @@ async function decryptValue(key, rec) {
 
 // ---------- users ----------
 const publicUser = (u) =>
-  u && { id: u.id, name: u.name, email: u.email, created_at: u.created_at, last_login: u.last_login, account_status: u.account_status };
-
-const normalizeEmail = (e) => String(e || '').trim().toLowerCase();
-export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  u && { id: u.id, name: u.name, username: u.username, created_at: u.created_at, last_login: u.last_login, account_status: u.account_status };
 
 export function validatePassword(pw) {
   if (pw.length < 8) return 'Use at least 8 characters';
@@ -154,11 +185,12 @@ export async function listUsers() {
   return users.map(publicUser).sort((a, b) => String(b.last_login).localeCompare(String(a.last_login)));
 }
 
-export async function createUser({ name, email, password }) {
-  const cleanName = String(name || '').trim().slice(0, 40);
-  const cleanEmail = normalizeEmail(email);
-  if (!cleanName) throw new DBError('Enter your name', 'validation');
-  if (!EMAIL_RE.test(cleanEmail)) throw new DBError('Enter a valid email address', 'validation');
+export async function createUser({ name, username, password }) {
+  const cleanUsername = normalizeUsername(username);
+  const userErr = validateUsername(cleanUsername);
+  if (userErr) throw new DBError(userErr, 'validation');
+  // Display name defaults to the username ("ash" -> "Ash"); it can be changed in Settings.
+  const cleanName = String(name || '').trim().slice(0, 40) || cleanUsername.charAt(0).toUpperCase() + cleanUsername.slice(1);
   const pwErr = validatePassword(password);
   if (pwErr) throw new DBError(pwErr, 'validation');
 
@@ -169,7 +201,7 @@ export async function createUser({ name, email, password }) {
   const user = {
     id: newUserId(),
     name: cleanName,
-    email: cleanEmail,
+    username: cleanUsername,
     salt,
     keySalt,
     iterations: ITERATIONS,
@@ -181,7 +213,7 @@ export async function createUser({ name, email, password }) {
   try {
     await transact(['users'], 'readwrite', (tx) => request(tx.objectStore('users').add(user)));
   } catch (e) {
-    if (e?.name === 'ConstraintError') throw new DBError('A profile with this email already exists on this device', 'exists');
+    if (e?.name === 'ConstraintError') throw new DBError('That username is already taken on this device', 'exists');
     throw e;
   }
   return { user: publicUser(user), key };
@@ -191,11 +223,11 @@ async function getUserRaw(id) {
   return transact(['users'], 'readonly', (tx) => request(tx.objectStore('users').get(id)));
 }
 
-export async function verifyLogin(email, password) {
-  const u = await transact(['users'], 'readonly', (tx) => request(tx.objectStore('users').index('email').get(normalizeEmail(email))));
-  // Always run the KDF so timing doesn't reveal whether the email exists.
+export async function verifyLogin(username, password) {
+  const u = await transact(['users'], 'readonly', (tx) => request(tx.objectStore('users').index('username').get(normalizeUsername(username))));
+  // Always run the KDF so timing doesn't reveal whether the username exists.
   const bits = await verifierFor(password, u?.salt || randomBytes(16), u?.iterations || ITERATIONS);
-  if (!u || !sameBytes(bits, u.verifier)) throw new DBError('Incorrect email or password', 'auth');
+  if (!u || !sameBytes(bits, u.verifier)) throw new DBError('Incorrect username or password', 'auth');
   if (u.account_status !== 'active') throw new DBError('This profile is disabled', 'disabled');
   const key = await dataKeyFor(password, u.keySalt, u.iterations);
   u.last_login = new Date().toISOString();
