@@ -104,9 +104,10 @@ function Gate() {
   const { toast } = useUI();
   const { effectiveTheme } = useTheme();
 
+  // The sign-in scene is always dark, so keep light status-bar icons while it's showing.
   useEffect(() => {
-    setStatusBarTheme(effectiveTheme === 'dark');
-  }, [effectiveTheme]);
+    setStatusBarTheme(effectiveTheme === 'dark' || auth.status === 'signedOut');
+  }, [effectiveTheme, auth.status]);
 
   useEffect(() => {
     const onUpdate = (e) =>

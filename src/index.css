@@ -248,8 +248,9 @@
 
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 
+/* The sign-in intro (.fb-anim) is exempt; it tones itself down in authScene.css instead. */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *:not(.fb-anim), *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
