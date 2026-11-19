@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Loader2, ShieldAlert } from 'lucide-react';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { UIProvider, useUI } from './context/UIContext';
@@ -44,12 +44,26 @@ function CurrentView() {
 
 function Shell() {
   const { route, navigate, openEditor, editor } = useUI();
-  const { notice } = useAuth();
+  const { notice, isAdmin, users } = useAuth();
   const { toast } = useUI();
 
   useEffect(() => {
     if (notice) toast({ title: notice, duration: 6000 });
   }, [notice, toast]);
+
+  // Admins hear about sign-ups and password resets waiting for them, once per sign-in.
+  const waiting = isAdmin ? users.filter((u) => u.account_status === 'pending' || u.reset_requested_at).length : 0;
+  const toldAdmin = useRef(false);
+  useEffect(() => {
+    if (!waiting || toldAdmin.current) return;
+    toldAdmin.current = true;
+    toast({
+      title: `${waiting} account${waiting > 1 ? 's' : ''} waiting for you`,
+      description: 'Approve sign-ups and password resets in the admin console.',
+      duration: 8000,
+      action: { label: 'Review', onClick: () => navigate('settings', { section: 'admin' }) },
+    });
+  }, [waiting, toast, navigate]);
 
   // "N" opens a new task (when not typing)
   useEffect(() => {

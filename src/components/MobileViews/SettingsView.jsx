@@ -15,6 +15,7 @@ import { Avatar, Card, CardHeader, Modal, Segmented, Toggle, cn } from '../ui';
 import { ALARM_TONES, playTone } from '../../lib/sound';
 import { useAlarm } from '../AlarmManager';
 import { DiaryReminderSettings } from '../Diary/DiaryView';
+import { AdminCard } from '../Admin/AdminConsole';
 
 const CATEGORY_COLORS = ['#5B8CFF', '#A78BFA', '#22D3EE', '#34D399', '#F5A524', '#F472B6', '#FB7185', '#C2F23D'];
 
@@ -132,6 +133,9 @@ export const SettingsView = () => {
         </div>
         <PasswordForm />
       </Card>
+
+      {/* Admin console (admins only) */}
+      <AdminCard />
 
       {/* Appearance */}
       <Card>
@@ -524,9 +528,11 @@ function DataCard() {
         <button type="button" className="btn btn-danger" onClick={() => { setTyped(''); setConfirm('profile'); }}>
           <UserX className="w-4 h-4" /> Delete my profile
         </button>
-        <button type="button" className="btn btn-danger" onClick={() => { setTyped(''); setConfirm('device'); }}>
-          <Trash2 className="w-4 h-4" /> Delete all app data on this device
-        </button>
+        {auth.isAdmin && (
+          <button type="button" className="btn btn-danger" onClick={() => { setTyped(''); setConfirm('device'); }}>
+            <Trash2 className="w-4 h-4" /> Delete all app data on this device
+          </button>
+        )}
       </div>
 
       <Modal open={Boolean(pending)} onClose={() => !busy && setPending(null)} labelledBy="restore-title">
@@ -568,7 +574,9 @@ function DataCard() {
           <p className="text-sm text-muted mt-1">
             {confirm === 'device'
               ? 'Every profile, task, setting and cached file on this device will be permanently erased.'
-              : 'Your profile and all of its tasks, goals and history will be permanently erased from this device.'}{' '}
+              : `Your profile and all of its tasks, goals and history will be permanently erased from this device.${
+                  auth.isAdmin && auth.users.some((u) => u.id !== auth.user?.id) ? ' Another account will become the admin.' : ''
+                }`}{' '}
             This can't be undone. Export a backup first if you might need it.
           </p>
           <label className="block mt-4">

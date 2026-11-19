@@ -1,12 +1,18 @@
 // Ash Do local database: IndexedDB + Web Crypto. No network, no dependencies.
 //
 // Stores
-//   users   { id, name, username, salt, keySalt, iterations, verifier, created_at, last_login, account_status }
+//   users   { id, name, username, salt, keySalt, iterations, verifier, created_at, last_login,
+//             role: 'admin' | 'user', account_status: 'pending' | 'active' | 'rejected' | 'disabled',
+//             reset_request?: { salt, keySalt, verifier, iterations, requested_at } }
 //   records { id: `${user_id}|${kind}|${rid}`, user_id, kind, rid, iv, data, updated_at }  (data = AES-GCM ciphertext)
 //   meta    { key, ... }  ('session' -> remembered sign-in on this device)
 //
 // Every record is encrypted with a key derived from the owner's password (PBKDF2 → AES-GCM 256).
 // Passwords are never stored; only a salted PBKDF2 verifier is kept.
+//
+// Accounts work like Ash Flow's, but entirely on this device (no server, no sheet): the first
+// account is the admin; every later sign-up waits as 'pending' until an admin approves it, and
+// admins can approve, reject, disable, enable, promote and delete any other account here.
 
 const DB_NAME = 'ashdo';
 const DB_VERSION = 2; // v2: sign in with a username instead of an email
@@ -167,7 +173,28 @@ async function decryptValue(key, rec) {
 
 // ---------- users ----------
 const publicUser = (u) =>
-  u && { id: u.id, name: u.name, username: u.username, created_at: u.created_at, last_login: u.last_login, account_status: u.account_status };
+  u && {
+    id: u.id,
+    name: u.name,
+    username: u.username,
+    created_at: u.created_at,
+    last_login: u.last_login,
+    account_status: u.account_status,
+    role: u.role === 'admin' ? 'admin' : 'user',
+    reset_requested_at: u.reset_request?.requested_at || null,
+  };
+
+// ---------- roles & approval ----------
+export const STATUS = { PENDING: 'pending', ACTIVE: 'active', REJECTED: 'rejected', DISABLED: 'disabled' };
+const isAdminRaw = (u) => u?.role === 'admin' && u.account_status === STATUS.ACTIVE;
+
+// Devices from before roles existed have no admin: make the earliest active account the admin
+// (or, if none is active, the earliest account, activated), so someone can always approve sign-ups.
+function adminToPromote(users) {
+  if (!users.length || users.some(isAdminRaw)) return null;
+  const byAge = [...users].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  return byAge.find((u) => u.account_status === STATUS.ACTIVE) || byAge[0];
+}
 
 export function validatePassword(pw) {
   if (pw.length < 8) return 'Use at least 8 characters';
@@ -181,7 +208,19 @@ const newUserId = () => {
 };
 
 export async function listUsers() {
-  const users = await transact(['users'], 'readonly', (tx) => request(tx.objectStore('users').getAll()));
+  let users = await transact(['users'], 'readonly', (tx) => request(tx.objectStore('users').getAll()));
+  const promote = adminToPromote(users);
+  if (promote) {
+    await transact(['users'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('users');
+      const u = await request(store.get(promote.id));
+      if (!u) return;
+      u.role = 'admin';
+      u.account_status = STATUS.ACTIVE;
+      await request(store.put(u));
+    });
+    users = await transact(['users'], 'readonly', (tx) => request(tx.objectStore('users').getAll()));
+  }
   return users.map(publicUser).sort((a, b) => String(b.last_login).localeCompare(String(a.last_login)));
 }
 
@@ -208,10 +247,16 @@ export async function createUser({ name, username, password }) {
     verifier,
     created_at: now,
     last_login: now,
-    account_status: 'active',
   };
   try {
-    await transact(['users'], 'readwrite', (tx) => request(tx.objectStore('users').add(user)));
+    // Decided inside the write, so two sign-ups at once can't both become the admin.
+    await transact(['users'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('users');
+      const first = (await request(store.count())) === 0;
+      user.role = first ? 'admin' : 'user';
+      user.account_status = first ? STATUS.ACTIVE : STATUS.PENDING;
+      await request(store.add(user));
+    });
   } catch (e) {
     if (e?.name === 'ConstraintError') throw new DBError('That username is already taken on this device', 'exists');
     throw e;
@@ -228,9 +273,13 @@ export async function verifyLogin(username, password) {
   // Always run the KDF so timing doesn't reveal whether the username exists.
   const bits = await verifierFor(password, u?.salt || randomBytes(16), u?.iterations || ITERATIONS);
   if (!u || !sameBytes(bits, u.verifier)) throw new DBError('Incorrect username or password', 'auth');
-  if (u.account_status !== 'active') throw new DBError('This profile is disabled', 'disabled');
+  if (u.account_status === STATUS.PENDING)
+    throw new DBError('Your account is waiting for admin approval. You can sign in once an admin of this phone approves it.', 'pending');
+  if (u.account_status === STATUS.REJECTED) throw new DBError('Your registration was rejected by the admin.', 'rejected');
+  if (u.account_status !== STATUS.ACTIVE) throw new DBError('Your account has been disabled. Please contact the admin.', 'disabled');
   const key = await dataKeyFor(password, u.keySalt, u.iterations);
   u.last_login = new Date().toISOString();
+  delete u.reset_request; // they remembered the password: any pending reset is no longer needed
   await transact(['users'], 'readwrite', (tx) => request(tx.objectStore('users').put(u)));
   return { user: publicUser(u), key };
 }
@@ -275,6 +324,100 @@ export async function changePassword(id, oldPassword, newPassword) {
     if (session?.user_id === id) tx.objectStore('meta').put({ ...session, cryptoKey: newKey });
   });
   return newKey;
+}
+
+// ---------- forgot password (approved by an admin) ----------
+// The user picks the new password now; an admin approves it later. Their data is encrypted with
+// the forgotten password, so approving it starts that account's data fresh.
+export async function requestPasswordReset(username, newPassword) {
+  const pwErr = validatePassword(newPassword);
+  if (pwErr) throw new DBError(pwErr, 'validation');
+  const salt = randomBytes(16);
+  const keySalt = randomBytes(16);
+  const verifier = await verifierFor(newPassword, salt, ITERATIONS); // before the transaction opens
+  await transact(['users'], 'readwrite', async (tx) => {
+    const store = tx.objectStore('users');
+    const u = await request(store.index('username').get(normalizeUsername(username)));
+    if (!u) throw new DBError('There is no account with that username on this phone', 'missing');
+    u.reset_request = { salt, keySalt, verifier, iterations: ITERATIONS, requested_at: new Date().toISOString() };
+    await request(store.put(u));
+  });
+}
+
+// ---------- admin ----------
+// Runs fn(tx, target) after checking, in the same transaction, that adminId is an active admin
+// and is not acting on their own account.
+function asAdmin(adminId, targetId, fn, stores = ['users']) {
+  return transact(stores, 'readwrite', async (tx) => {
+    const users = tx.objectStore('users');
+    const admin = await request(users.get(adminId));
+    if (!isAdminRaw(admin)) throw new DBError('Only an admin can do that', 'forbidden');
+    if (adminId === targetId) throw new DBError("You can't change your own account from the admin console", 'self');
+    const target = await request(users.get(targetId));
+    if (!target) throw new DBError('That account no longer exists', 'missing');
+    return fn(tx, target);
+  });
+}
+
+async function dropRecordsAndSession(tx, userId) {
+  const store = tx.objectStore('records');
+  const keys = await request(store.index('user_id').getAllKeys(userId));
+  keys.forEach((k) => store.delete(k));
+  const session = await request(tx.objectStore('meta').get('session'));
+  if (session?.user_id === userId) tx.objectStore('meta').delete('session');
+}
+
+// Approve (active), reject, disable or re-enable (active) an account.
+export function adminSetStatus(adminId, targetId, status) {
+  if (![STATUS.ACTIVE, STATUS.REJECTED, STATUS.DISABLED].includes(status)) throw new DBError('Unknown account status', 'validation');
+  return asAdmin(adminId, targetId, async (tx, u) => {
+    if (u.role === 'admin' && status !== STATUS.ACTIVE) throw new DBError('Remove admin rights before disabling this account', 'admin');
+    u.account_status = status;
+    await request(tx.objectStore('users').put(u));
+    return publicUser(u);
+  });
+}
+
+export function adminSetRole(adminId, targetId, role) {
+  return asAdmin(adminId, targetId, async (tx, u) => {
+    if (role === 'admin' && u.account_status !== STATUS.ACTIVE) throw new DBError('Approve the account before making it an admin', 'status');
+    u.role = role === 'admin' ? 'admin' : 'user';
+    await request(tx.objectStore('users').put(u));
+    return publicUser(u);
+  });
+}
+
+export function adminDeleteUser(adminId, targetId) {
+  return asAdmin(
+    adminId,
+    targetId,
+    async (tx, u) => {
+      tx.objectStore('users').delete(u.id);
+      await dropRecordsAndSession(tx, u.id);
+    },
+    ['users', 'records', 'meta']
+  );
+}
+
+// approve: the requested password replaces the old one and the account's (unreadable) data is
+// erased; otherwise the request is just dismissed.
+export function adminResolveReset(adminId, targetId, approve) {
+  return asAdmin(
+    adminId,
+    targetId,
+    async (tx, u) => {
+      const r = u.reset_request;
+      if (!r) throw new DBError('This account has no password reset request', 'missing');
+      delete u.reset_request;
+      if (approve) {
+        Object.assign(u, { salt: r.salt, keySalt: r.keySalt, verifier: r.verifier, iterations: r.iterations });
+        await dropRecordsAndSession(tx, u.id);
+      }
+      await request(tx.objectStore('users').put(u));
+      return publicUser(u);
+    },
+    ['users', 'records', 'meta']
+  );
 }
 
 export async function deleteUser(id) {

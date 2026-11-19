@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Check, X, Trophy, CheckCircle2, Info } from 'lucide-react';
@@ -196,7 +197,9 @@ export function Modal({ open, onClose, children, className, labelledBy, fullOnMo
     };
   }, [open, onClose]);
   if (!open) return null;
-  return (
+  // Rendered on <body>: a page that has just faded in (.anim-page keeps its transform animation
+  // applied) would otherwise trap this fixed overlay inside the page instead of the screen.
+  return createPortal(
     <div className="fixed inset-0 z-[70] flex items-end justify-center" role="dialog" aria-modal="true" aria-labelledby={labelledBy}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm anim-fade" onClick={onClose} />
       <div
@@ -210,7 +213,8 @@ export function Modal({ open, onClose, children, className, labelledBy, fullOnMo
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

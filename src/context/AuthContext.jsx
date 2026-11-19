@@ -8,6 +8,8 @@ import { useUI } from './UIContext';
 // that persists changes to IndexedDB (encrypted) in the background.
 // Every profile on the phone has its own username, password and encrypted data;
 // signing in to one never exposes another's tasks, settings, theme or reminders.
+// Accounts follow Ash Flow's rules, kept on this device: the first account is the admin, later
+// sign-ups wait for an admin's approval, and admins manage every account (see db.js).
 const AuthContext = createContext();
 const SessionContext = createContext();
 
@@ -26,7 +28,13 @@ export const AuthProvider = ({ children }) => {
 
   const enter = useCallback(async (user, key, extraNotice) => {
     resetUI();
-    const snapshot = await db.loadUserData(user.id, key);
+    let snapshot = await db.loadUserData(user.id, key);
+    if (snapshot.kv.settings === undefined && !snapshot.tasks.length) {
+      // a brand-new or freshly reset account: start it with its display name
+      const settings = { profile: { userName: user.name, profileImage: null } };
+      await db.writeRecords(user.id, key, [{ kind: 'kv', rid: 'settings', value: settings }]);
+      snapshot = { ...snapshot, kv: { ...snapshot.kv, settings } };
+    }
     setState({ status: 'ready', user, key, snapshot, version: Date.now(), error: '', notice: extraNotice || (snapshot.unreadable ? `${snapshot.unreadable} damaged records were skipped.` : '') });
     db.requestPersistence();
   }, [resetUI]);
@@ -48,10 +56,17 @@ export const AuthProvider = ({ children }) => {
     })();
   }, [enter, refreshUsers]);
 
+  // Returns { pending: true, user } when the account must wait for an admin's approval
+  // (every account except the first one on this device); otherwise signs straight in.
   const register = useCallback(
-    async ({ username, password, remember = true, importLegacy = false }) => {
-      const { user, key } = await db.createUser({ username, password });
+    async ({ name, username, password, remember = true, importLegacy = false }) => {
+      const { user, key } = await db.createUser({ name, username, password });
       const puts = [{ kind: 'kv', rid: 'settings', value: { profile: { userName: user.name, profileImage: null } } }];
+      if (user.account_status !== db.STATUS.ACTIVE) {
+        await db.writeRecords(user.id, key, puts);
+        await refreshUsers();
+        return { pending: true, user };
+      }
       let notice = '';
       if (importLegacy) {
         const legacy = collectLegacyData();
@@ -73,8 +88,41 @@ export const AuthProvider = ({ children }) => {
       await refreshUsers();
       navigate('dashboard'); // every sign-in starts on Today, never on the previous person's page
       await enter(user, key, notice);
+      return { pending: false, user };
     },
     [enter, refreshUsers, navigate]
+  );
+
+  const requestPasswordReset = useCallback(
+    async (username, newPassword) => {
+      await db.requestPasswordReset(username, newPassword);
+      await refreshUsers();
+    },
+    [refreshUsers]
+  );
+
+  // ---------- admin (checked again inside db.js) ----------
+  const me = users.find((u) => u.id === state.user?.id) || state.user;
+  const isAdmin = me?.role === 'admin';
+  const adminAction = useCallback(
+    async (fn) => {
+      try {
+        return await fn(state.user?.id);
+      } finally {
+        await refreshUsers();
+      }
+    },
+    [state.user, refreshUsers]
+  );
+  const admin = useMemo(
+    () => ({
+      setStatus: (targetId, status) => adminAction((id) => db.adminSetStatus(id, targetId, status)),
+      setRole: (targetId, role) => adminAction((id) => db.adminSetRole(id, targetId, role)),
+      deleteUser: (targetId) => adminAction((id) => db.adminDeleteUser(id, targetId)),
+      resolveReset: (targetId, approve) => adminAction((id) => db.adminResolveReset(id, targetId, approve)),
+      refresh: refreshUsers,
+    }),
+    [adminAction, refreshUsers]
   );
 
   const login = useCallback(
@@ -141,8 +189,23 @@ export const AuthProvider = ({ children }) => {
   );
 
   const value = useMemo(
-    () => ({ ...state, users, register, login, logout, renameUser, changePassword, deleteProfile, wipeDevice, restore, legacyAvailable: Boolean(collectLegacyData()) }),
-    [state, users, register, login, logout, renameUser, changePassword, deleteProfile, wipeDevice, restore]
+    () => ({
+      ...state,
+      users,
+      isAdmin,
+      admin,
+      register,
+      login,
+      logout,
+      requestPasswordReset,
+      renameUser,
+      changePassword,
+      deleteProfile,
+      wipeDevice,
+      restore,
+      legacyAvailable: Boolean(collectLegacyData()),
+    }),
+    [state, users, isAdmin, admin, register, login, logout, requestPasswordReset, renameUser, changePassword, deleteProfile, wipeDevice, restore]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
